@@ -64,3 +64,23 @@ Unlike other shutdown timers, this project showcases:
 - **Resource efficient** - Minimal memory footprint
 - **Robust error handling** - Graceful failure management
 - **Clean termination** - Proper process cleanup
+
+## 🔒 Security & Privacy
+
+### What This App Does
+- ✅ **Only shutdown command** - Uses Windows built-in `shutdown` command
+- ✅ **No network access** - Completely offline operation
+- ✅ **No data collection** - Zero telemetry or analytics
+- ✅ **No registry changes** - Leaves system untouched
+- ✅ **Transparent code** - Full source available
+
+### What This App NEVER Does
+- ❌ No internet connections
+- ❌ No file system modifications outside temp folder
+- ❌ No personal data access
+- ❌ No background processes
+- ❌ No automatic updates or phone-home
+
+### Antivirus Notes
+Some antivirus may flag PyInstaller executables as suspicious - this is a known false positive. The complete source code is available for inspection.
+
