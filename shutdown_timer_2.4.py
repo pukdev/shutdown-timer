@@ -1,0 +1,613 @@
+import os
+import sys
+import time
+import threading
+import tkinter as tk
+from tkinter import messagebox
+from datetime import datetime, timedelta
+import pystray
+from PIL import Image, ImageDraw, ImageTk
+import tempfile
+import signal
+try:
+    import win32gui
+    import win32con
+    import win32api
+    WINDOWS_API_AVAILABLE = True
+except ImportError:
+    WINDOWS_API_AVAILABLE = False
+
+# Проверка единственного экземпляра
+def check_single_instance():
+    lock_file = os.path.join(tempfile.gettempdir(), "shutdown_timer.lock")
+    
+    # Проверяем, существует ли файл блокировки
+    if os.path.exists(lock_file):
+        try:
+            # Пытаемся прочитать PID из файла
+            with open(lock_file, 'r') as f:
+                pid = f.read().strip()
+            
+            # Проверяем, работает ли процесс с этим PID
+            if pid and os.path.exists(f"/proc/{pid}"):
+                return False  # Приложение уже запущено
+        except:
+            pass
+    
+    # Создаем файл блокировки с текущим PID
+    try:
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+        return True
+    except:
+        return False
+
+# Очистка файла блокировки при выходе
+def cleanup_lock():
+    lock_file = os.path.join(tempfile.gettempdir(), "shutdown_timer.lock")
+    try:
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+    except:
+        pass
+
+# Обработчик сигналов для корректного завершения
+def signal_handler(signum, frame):
+    cleanup_lock()
+    os._exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Проверяем единственный экземпляр
+if not check_single_instance():
+    messagebox.showerror("Ошибка", "Таймер выключения уже запущен!")
+    sys.exit(1)
+
+# Цветовая тема
+BG = "#0C0C0C"
+CARD_BG = "#161616"
+TEXT = "#00FF41"
+TEXT_DIM = "#00AA2E"
+TEXT_BRIGHT = "#00FF00"
+BORDER = "#333333"
+BTN_BG = "#1E1E1E"
+BTN_HOVER = "#2A2A2A"
+SLIDER_TRACK = "#333333"
+SLIDER_FILL = "#00FF41"
+SLIDER_THUMB = "#00FF00"
+TITLE_BAR = "#1A1A1A"
+INPUT_BG = "#2A2A2A"
+INPUT_FG = "#00FF41"
+
+# Локализация
+current_language = "ru"
+TRANSLATIONS = {
+    "ru": {
+        "title": "Таймер выключения системы",
+        "header": "┌──── ТАЙМЕР ВЫКЛЮЧЕНИЯ СИСТЕМЫ ────┐",
+        "subtitle": "│     Установите задержку до выключения     │",
+        "footer": "└─────────────────────────────────────────┘",
+        "command_prompt": "C:\\> СЕЛЕКТОР_ВРЕМЕНИ.EXE --диапазон 1-720",
+        "status_ready": "Статус: ГОТОВ | Диапазон: 1 мин - 12 часов",
+        "status_scheduled": "Статус: ВЫКЛЮЧЕНИЕ ЗАПЛАНИРОВАНО НА",
+        "status_cancelled": "Статус: ВЫКЛЮЧЕНИЕ ОТМЕНЕНО",
+        "status_countdown": "Статус: ОБРАТНЫЙ ОТСЧЕТ | Осталось:",
+        "btn_start": "[ СТАРТ ]",
+        "btn_stop": "[ СТОП ]",
+        "btn_show_manual": "[ПОКАЗАТЬ РУЧНОЙ ВВОД]",
+        "btn_hide_manual": "[СКРЫТЬ РУЧНОЙ ВВОД]",
+        "manual_label": "Ручной ввод (1-720 мин):",
+        "btn_apply_start": "Применить",
+        "error_title": "СИСТЕМНАЯ ОШИБКА",
+        "error_invalid_time": "Некорректный параметр времени!",
+        "error_title_input": "ОШИБКА",
+        "error_range": "Значение должно быть от",
+        "error_number": "Введите корректное число",
+        "timer_set_title": "ТАЙМЕР ВЫКЛЮЧЕНИЯ",
+        "timer_set_msg": "Система выключится через",
+        "operation_title": "ОПЕРАЦИЯ",
+        "operation_cancelled": "Таймер выключения отменен.",
+        "language_btn": "EN",
+        "shutdown_now": "СИСТЕМА ВЫКЛЮЧАЕТСЯ!"
+    },
+    "en": {
+        "title": "System Shutdown Timer",
+        "header": "┌──── SHUTDOWN TIMER MODULE ────┐",
+        "subtitle": "│   Set automatic shutdown delay   │",
+        "footer": "└─────────────────────────────────┘",
+        "command_prompt": "C:\\> TIME_SELECTOR.EXE --range 1-720",
+        "status_ready": "Status: READY | Range: 1 min - 12 hours",
+        "status_scheduled": "Status: SHUTDOWN SCHEDULED FOR",
+        "status_cancelled": "Status: SHUTDOWN CANCELLED",
+        "status_countdown": "Status: COUNTDOWN ACTIVE | Remaining:",
+        "btn_start": "[ START ]",
+        "btn_stop": "[ STOP ]",
+        "btn_show_manual": "[SHOW MANUAL INPUT]",
+        "btn_hide_manual": "[HIDE MANUAL INPUT]",
+        "manual_label": "Manual input (1-720 min):",
+        "btn_apply_start": "Apply",
+        "error_title": "SYSTEM ERROR",
+        "error_invalid_time": "Invalid time parameter!",
+        "error_title_input": "ERROR",
+        "error_range": "Value must be between",
+        "error_number": "Please enter a valid number",
+        "timer_set_title": "SHUTDOWN TIMER",
+        "timer_set_msg": "System will shutdown in",
+        "operation_title": "OPERATION",
+        "operation_cancelled": "Shutdown timer cancelled.",
+        "language_btn": "РУ",
+        "shutdown_now": "SYSTEM SHUTTING DOWN!"
+    }
+}
+
+def get_text(key):
+    return TRANSLATIONS[current_language][key]
+
+# Создание иконки для трея
+def create_tray_icon():
+    # Создаем простую иконку 16x16 пикселей
+    width = 16
+    height = 16
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Рисуем символ выключения (более читаемый)
+    # Внешний круг
+    draw.ellipse([1, 1, 15, 15], outline=(0, 255, 65), width=1)
+    # Внутренний круг (центр)
+    draw.ellipse([6, 6, 10, 10], fill=(0, 255, 65))
+    # Линия выключения (от центра к краю)
+    draw.line([8, 8, 8, 2], fill=(0, 0, 0), width=2)
+    
+    return image
+
+def add_badge(base_icon, badge_symbol="⏸", badge_color=(255, 255, 255)):
+    """
+    Добавляет бейдж состояния к базовой иконке
+    badge_symbol: символ бейджа (⏸, ✕, ▶, etc.)
+    badge_color: цвет бейджа (R, G, B)
+    """
+    try:
+        # Создаем копию базовой иконки
+        icon_with_badge = base_icon.copy()
+        draw = ImageDraw.Draw(icon_with_badge)
+        
+        # Размеры иконки
+        width, height = base_icon.size
+        
+        # Позиция бейджа (правый нижний угол)
+        badge_size = max(6, min(width, height) // 3)
+        badge_x = width - badge_size - 1
+        badge_y = height - badge_size - 1
+        
+        # Рисуем фон бейджа (круг)
+        draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], 
+                    fill=badge_color, outline=(0, 0, 0), width=1)
+        
+        # Добавляем символ бейджа
+        try:
+            # Пытаемся использовать шрифт
+            from PIL import ImageFont
+            font_size = max(8, badge_size - 2)
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            # Fallback - без шрифта
+            font = None
+        
+        # Позиция текста (центрируем)
+        text_bbox = draw.textbbox((0, 0), badge_symbol, font=font) if font else (0, 0, 8, 8)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        
+        text_x = badge_x + (badge_size - text_width) // 2
+        text_y = badge_y + (badge_size - text_height) // 2
+        
+        # Рисуем символ
+        draw.text((text_x, text_y), badge_symbol, fill=(0, 0, 0), font=font)
+        
+        return icon_with_badge
+    except Exception as e:
+        print(f"Ошибка создания бейджа: {e}")
+        return base_icon
+
+def create_progress_icon(progress=0.0):
+    """
+    Создает иконку с прогресс-кольцом для трея
+    progress: значение от 0.0 до 1.0 (0% - 100%)
+    """
+    width = 16
+    height = 16
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Внешний круг (фон)
+    draw.ellipse([1, 1, 15, 15], outline=(50, 50, 50), width=1)
+    
+    # Прогресс-кольцо
+    if progress > 0:
+        # Вычисляем угол для прогресса (0-360 градусов)
+        angle = int(progress * 360)
+        
+        # Рисуем дугу прогресса
+        if angle <= 180:
+            # Первая половина круга
+            draw.arc([1, 1, 15, 15], start=90, end=90-angle, fill=(0, 255, 65), width=2)
+        else:
+            # Полная первая половина
+            draw.arc([1, 1, 15, 15], start=90, end=-90, fill=(0, 255, 65), width=2)
+            # Вторая половина
+            draw.arc([1, 1, 15, 15], start=90, end=90-(angle-180), fill=(0, 255, 65), width=2)
+    
+    # Центральная точка
+    draw.ellipse([6, 6, 10, 10], fill=(0, 255, 65))
+    
+    return image
+
+# Иконка окна без .ico: рисуем и ставим через iconphoto
+def apply_tk_icon_from_draw(root):
+    img = create_tray_icon().resize((32, 32))  # можно 24–48, на вкус
+    photo = ImageTk.PhotoImage(img)
+    root.iconphoto(True, photo)                # Tk ожидает PhotoImage
+    root._iconphoto_ref = photo                # держим ссылку, чтобы GC не собрал
+
+def save_multi_ico():
+    """
+    Создает многоразмерный .ico файл для улучшения четкости на Windows
+    Размеры: 16x16, 32x32, 48x48, 256x256
+    """
+    try:
+        # Создаем базовую иконку
+        base_icon = create_tray_icon()
+        
+        # Размеры для .ico файла
+        sizes = [16, 32, 48, 256]
+        images = []
+        
+        # Создаем изображения разных размеров
+        for size in sizes:
+            resized = base_icon.resize((size, size), Image.Resampling.LANCZOS)
+            images.append(resized)
+        
+        # Сохраняем как .ico файл
+        ico_path = os.path.join(tempfile.gettempdir(), "shutdown_timer_icon.ico")
+        images[0].save(ico_path, format='ICO', sizes=[(size, size) for size in sizes])
+        
+        return ico_path
+    except Exception as e:
+        print(f"Ошибка создания .ico: {e}")
+        return None
+
+# Функции для работы с системным треем
+tray_icon = None
+
+def show_window():
+    global tray_icon
+    print("show_window() called")  # Отладочная информация
+    
+    # Используем Windows API для принудительного показа окна
+    if WINDOWS_API_AVAILABLE:
+        try:
+            hwnd = root.winfo_id()
+            if win32gui.IsIconic(hwnd):  # Если окно свернуто
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(hwnd)
+        except:
+            pass
+    
+    root.after(0, lambda: root.deiconify())
+    root.after(0, lambda: root.lift())
+    root.after(0, lambda: root.focus_force())
+    # Не останавливаем иконку трея, чтобы можно было снова свернуть
+
+def hide_to_tray():
+    global tray_icon
+    
+    # Сворачиваем окно
+    root.withdraw()
+    
+    # Если иконка уже существует, просто возвращаемся
+    if tray_icon is not None:
+        return
+    
+    # Создаем иконку в трее
+    image = create_tray_icon()
+    
+    # Создаем меню трея
+    menu = pystray.Menu(
+        pystray.MenuItem(
+            "Открыть" if current_language == "ru" else "Open",
+            lambda icon, item: show_window(),   # важна сигнатура (icon, item)
+            default=True                        # ← сделает клик ЛКМ «открыть окно»
+        ),
+        pystray.Menu.SEPARATOR,                 # правильный разделитель
+        pystray.MenuItem(
+            "Выход" if current_language == "ru" else "Exit",
+            lambda icon, item: quit_app()
+        )
+    )
+    
+    # Создаем иконку в трее
+    tray_icon = pystray.Icon("shutdown_timer", image, get_text("title"), menu)
+    
+    # Запускаем иконку в трее в отдельном потоке
+    def run_tray():
+        try:
+            tray_icon.run()
+        except:
+            pass  # Игнорируем ошибки при остановке
+    
+    threading.Thread(target=run_tray, daemon=True).start()
+
+# Формат времени для слайдера
+def format_time(m):
+    if current_language == "ru":
+        if m < 60:
+            return f">>> {m:02d} МИНУТ <<<"
+        return f">>> {m//60} ЧАСОВ {m%60} МИНУТ <<<"
+    else:
+        if m < 60:
+            return f">>> {m:02d} MINUTES <<<"
+        return f">>> {m//60} HOURS {m%60} MINUTES <<<"
+
+# Формат обратного отсчета
+def format_count(sec):
+    if sec <= 0:
+        return get_text("shutdown_now")
+    h = sec // 3600
+    m = (sec % 3600) // 60
+    s = sec % 60
+    parts = []
+    if h:
+        parts.append(f"{h} " + ("ЧАС" if current_language=="ru" and h==1 else "ЧАСОВ"))
+    if m:
+        parts.append(f"{m} " + ("МИНУТА" if current_language=="ru" and m==1 else "МИНУТ"))
+    parts.append(f"{s} " + ("СЕКУНДА" if current_language=="ru" and s==1 else "СЕКУНД"))
+    return ">>> " + " ".join(parts) + " <<<"
+
+# Обратный отсчет
+countdown = False
+target_time = None
+tray_icon = None
+countdown_total = 0
+def countdown_worker():
+    global countdown, countdown_total
+    tick = 0
+    while countdown:
+        rem = int((target_time - datetime.now()).total_seconds())
+        text = format_count(rem)
+        status = f"{get_text('status_countdown')} {text.replace('>>> ','').replace(' <<<','')}"
+        root.after(0, lambda: countdown_label.config(text=text))
+        root.after(0, lambda: status_label.config(text=status, fg="#FF6B6B"))
+        
+        # Обновляем иконку трея с прогрессом
+        tick += 1
+        if countdown_total > 0:
+            p = 1 - rem / countdown_total
+            if tick % 15 == 0 and tray_icon:  # Обновляем каждые 15 секунд
+                tray_icon.icon = create_progress_icon(p)
+        
+        if rem <= 0:
+            break
+        time.sleep(1)
+    if not countdown:
+        root.after(0, lambda: countdown_label.config(text=""))
+
+# Создание окна
+root = tk.Tk()
+root.title(get_text("title"))
+apply_tk_icon_from_draw(root)
+
+# Создаем Hi-DPI .ico для улучшения четкости окна и панели задач
+ico_path = save_multi_ico()
+if ico_path:
+    try:
+        root.iconbitmap(ico_path)
+    except:
+        pass  # Игнорируем ошибки, если .ico не создался
+
+root.configure(bg=BG)
+root.geometry("540x420")
+root.resizable(False, False)  # Запрещаем изменение размера окна
+
+# Полное закрытие приложения
+def quit_app():
+    global countdown, tray_icon
+    countdown = False
+    os.system("shutdown /a")
+    if tray_icon:
+        tray_icon.stop()
+        tray_icon = None
+    cleanup_lock()  # Очищаем файл блокировки
+    root.quit()  # Останавливаем главный цикл
+    root.destroy()
+    os._exit(0)  # Принудительное завершение
+
+# Сворачивание в трей при закрытии окна
+def on_close():
+    # Всегда сворачиваем в трей, независимо от состояния таймера
+    print(f"on_close() called, countdown: {countdown}")  # Отладочная информация
+    hide_to_tray()
+
+root.protocol("WM_DELETE_WINDOW", on_close)
+
+# Темная тема заголовка (Win10+)
+try:
+    import ctypes
+    def dark_title(w):
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        hwnd = ctypes.windll.user32.GetParent(w.winfo_id())
+        val = ctypes.c_int(2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val))
+    root.after(100, lambda: dark_title(root))
+except:
+    pass
+
+# Интерфейс
+MONO_NORMAL = ("Consolas",11)
+MONO_BIG = ("Consolas",18,"bold")
+MONO_SMALL = ("Courier",8)
+
+# Верхняя панель
+bar = tk.Frame(root, bg=TITLE_BAR, height=28); bar.pack(fill="x")
+tk.Label(bar,text="⬛",bg=TITLE_BAR,fg=TEXT,font=("Consolas",10)).pack(side="left",padx=6)
+tk.Label(bar,text="shutdown_timer.exe",bg=TITLE_BAR,fg=TEXT,font=("Consolas",9)).pack(side="left")
+
+def toggle_lang(e=None):
+    global current_language
+    current_language = "en" if current_language=="ru" else "ru"
+    rebuild_texts()
+    root.title(get_text("title"))
+
+lang_btn = tk.Label(bar, text=get_text("language_btn"), bg=TITLE_BAR, fg=TEXT_BRIGHT, font=("Consolas",9,"bold"), cursor="hand2")
+lang_btn.pack(side="right",padx=10); lang_btn.bind("<Button-1>", toggle_lang)
+tk.Frame(root, bg=BORDER, height=1).pack(fill="x")
+
+# Основной фрейм
+mf = tk.Frame(root, bg=BG); mf.pack(fill="both",expand=True,padx=4,pady=4)
+tk.Label(mf,text="C:\\Windows\\System32>",bg=BG,fg=TEXT,font=MONO_NORMAL).pack(anchor="w",padx=12,pady=(8,4))
+
+header = tk.Label(mf, text=get_text("header"), bg=BG, fg=TEXT_BRIGHT, font=MONO_NORMAL); header.pack()
+subtitle = tk.Label(mf, text=get_text("subtitle"), bg=BG, fg=TEXT_DIM, font=MONO_NORMAL); subtitle.pack()
+footer = tk.Label(mf, text=get_text("footer"), bg=BG, fg=TEXT_BRIGHT, font=MONO_NORMAL); footer.pack(pady=(0,8))
+
+display = tk.Label(mf, text=format_time(30), bg=BG, fg=TEXT_BRIGHT, font=MONO_BIG); display.pack()
+countdown_label = tk.Label(mf, text="", bg=BG, fg="#FF6B6B", font=("Consolas",16,"bold")); countdown_label.pack(pady=(0,8))
+
+# Слайдер
+tf = tk.Frame(mf, bg=CARD_BG, relief="solid", bd=1, highlightbackground=BORDER); tf.pack(fill="x",padx=16,pady=(0,8))
+command_prompt_label = tk.Label(tf,text=get_text("command_prompt"),bg=CARD_BG,fg=TEXT,font=MONO_SMALL)
+command_prompt_label.pack(anchor="w",padx=6,pady=(4,2))
+canvas = tk.Canvas(tf,bg=CARD_BG,highlightthickness=0,bd=0,height=24); canvas.pack(fill="x",padx=6)
+
+SL_MIN, SL_MAX = 1, 720
+val = tk.IntVar(value=30)
+
+def draw_slider():
+    canvas.delete("all")
+    w = canvas.winfo_width()
+    if w<2: root.after(50, draw_slider); return
+    m=12; tw=w-2*m; ty=12; th=3; ts=10
+    prog=(val.get()-SL_MIN)/(SL_MAX-SL_MIN)
+    fx=m+prog*tw
+    canvas.create_rectangle(m,ty-th//2,m+tw,ty+th//2,fill=SLIDER_TRACK,outline="")
+    canvas.create_rectangle(m,ty-th//2,m+prog*tw,ty+th//2,fill=SLIDER_FILL,outline="")
+    canvas.create_rectangle(fx-ts//2,ty-ts//2,fx+ts//2,ty+ts//2,fill=SLIDER_THUMB,outline=TEXT_BRIGHT,width=1)
+
+root.after(100, draw_slider)
+def set_val(e):
+    if countdown: return
+    w=canvas.winfo_width(); m=12; tw=w-2*m
+    p=max(0,min(1,(e.x-m)/tw)); v=int(SL_MIN+p*(SL_MAX-SL_MIN))
+    val.set(v); display.config(text=format_time(v)); draw_slider()
+
+canvas.bind("<Button-1>", set_val); canvas.bind("<B1-Motion>", set_val)
+
+# Ручной ввод
+manual_frame = tk.Frame(tf, bg=CARD_BG)  # исправлено
+show_manual = tk.BooleanVar(value=False)
+
+def toggle_manual():
+    if countdown: return
+    if not show_manual.get():
+        show_manual.set(True)
+        manual_frame.pack(fill="x",padx=6,pady=3)  # исправлено
+        toggle_btn.config(text=get_text("btn_hide_manual"))
+        entry.delete(0,"end"); entry.insert(0,str(val.get())); entry.focus()
+    else:
+        show_manual.set(False)
+        manual_frame.pack_forget()
+        toggle_btn.config(text=get_text("btn_show_manual"))
+
+toggle_btn = tk.Button(tf,text=get_text("btn_show_manual"),command=toggle_manual,bg=BTN_BG,fg=TEXT,font=MONO_SMALL,activebackground=BTN_HOVER,activeforeground=TEXT_BRIGHT,bd=1,relief="solid",cursor="hand2")
+toggle_btn.pack(pady=(0,3)); toggle_btn.pack(anchor="center")
+
+manual_label_widget = tk.Label(manual_frame,text=get_text("manual_label"),bg=CARD_BG,fg=TEXT_DIM,font=MONO_SMALL)
+manual_label_widget.pack(anchor="w")
+row=tk.Frame(manual_frame,bg=CARD_BG); row.pack(fill="x",pady=(2,0))
+entry=tk.Entry(row,bg=INPUT_BG,fg=INPUT_FG,font=MONO_NORMAL,insertbackground=INPUT_FG,width=8); entry.pack(side="left",padx=(0,6))
+
+def apply_start():
+    if countdown: return
+    try:
+        v=int(entry.get())
+        if SL_MIN<=v<=SL_MAX:
+            val.set(v)
+            display.config(text=format_time(v))
+            draw_slider()
+        else:
+            messagebox.showerror(get_text("error_title_input"),f"{get_text('error_range')} {SL_MIN} до {SL_MAX}")
+    except:
+        messagebox.showerror(get_text("error_title_input"),get_text("error_number"))
+
+entry.bind("<Return>", lambda e: apply_start())
+apply_btn=tk.Button(row,text=get_text("btn_apply_start"),command=apply_start,bg=BTN_BG,fg=TEXT,font=MONO_SMALL,activebackground=BTN_HOVER,activeforeground=TEXT_BRIGHT,bd=1,relief="solid",padx=6)
+apply_btn.pack(side="left")
+
+# Статус и кнопки
+status_label=tk.Label(tf,text=get_text("status_ready"),bg=CARD_BG,fg=TEXT_DIM,font=MONO_SMALL)
+status_label.pack(anchor="w",padx=6,pady=(3,4))
+buttons=tk.Frame(mf,bg=BG); buttons.pack(fill="x",pady=6)
+
+def start_shutdown():
+    global countdown, target_time, countdown_total
+    if countdown: return
+    m=val.get()
+    if m<=0:
+        messagebox.showerror(get_text("error_title"),get_text("error_invalid_time"))
+        return
+    sec=m*60
+    global countdown_total; countdown_total = sec
+    os.system(f"shutdown /s /t {sec}")
+    countdown=True
+    target_time=datetime.now()+timedelta(seconds=sec)
+    threading.Thread(target=countdown_worker,daemon=True).start()
+    
+    # Добавляем бейдж "▶" при старте таймера
+    if tray_icon:
+        tray_icon.icon = add_badge(create_tray_icon(), "▶", (100, 255, 100))
+    
+    for w in (toggle_btn, apply_btn, b_start):
+        w.config(state="disabled")
+    messagebox.showinfo(get_text("timer_set_title"),f"{get_text('timer_set_msg')} {m} "+("минут" if current_language=="ru" else "minutes"))
+
+def cancel_shutdown():
+    global countdown
+    countdown=False
+    os.system("shutdown /a")
+    for w in (toggle_btn, apply_btn, b_start):
+        w.config(state="normal")
+    status_label.config(text=get_text("status_cancelled"),fg=TEXT_DIM)
+    countdown_label.config(text="")
+    
+    # Добавляем бейдж "✕" при отмене
+    if tray_icon:
+        tray_icon.icon = add_badge(create_tray_icon(), "✕", (255, 100, 100))
+    
+    messagebox.showinfo(get_text("operation_title"),get_text("operation_cancelled"))
+
+def make_btn(txt,cmd):
+    b=tk.Button(buttons,text=txt,command=cmd,bg=BTN_BG,fg=TEXT,font=MONO_NORMAL,activebackground=BTN_HOVER,activeforeground=TEXT_BRIGHT,bd=2,relief="solid",width=14)
+    b.bind("<Enter>",lambda e: b.config(bg=BTN_HOVER,fg=TEXT_BRIGHT) if b["state"]=="normal" else None)
+    b.bind("<Leave>",lambda e: b.config(bg=BTN_BG,fg=TEXT) if b["state"]=="normal" else None)
+    return b
+
+b_start=make_btn(get_text("btn_start"),start_shutdown); b_start.pack(side="left",expand=True,padx=8)
+b_stop=make_btn(get_text("btn_stop"),cancel_shutdown); b_stop.pack(side="right",expand=True,padx=8)
+
+def rebuild_texts():
+    header.config(text=get_text("header"))
+    subtitle.config(text=get_text("subtitle"))
+    footer.config(text=get_text("footer"))
+    command_prompt_label.config(text=get_text("command_prompt"))
+    manual_label_widget.config(text=get_text("manual_label"))
+    toggle_btn.config(text=get_text("btn_hide_manual") if show_manual.get() else get_text("btn_show_manual"))
+    apply_btn.config(text=get_text("btn_apply_start"))
+    lang_btn.config(text=get_text("language_btn"))
+    b_start.config(text=get_text("btn_start"))
+    b_stop.config(text=get_text("btn_stop"))
+    if not countdown:
+        status_label.config(text=get_text("status_ready"))
+    display.config(text=format_time(val.get()))
+
+root.mainloop()

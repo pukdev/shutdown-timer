@@ -1,3 +1,40 @@
+# 🕐 Shutdown Timer
+
+A stylish system shutdown timer with terminal-like interface for Windows.
+
+[![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%2B-blue.svg)](https://microsoft.com/windows)
+
+## 🚀 Quick Install
+
+```bash
+# Install from PyPI
+pip install shutdown-timer
+
+# Run the application
+shutdown-timer
+```
+
+## 📦 Alternative Installation Methods
+
+### From Source
+```bash
+# Clone the repository
+git clone https://github.com/pukdev/shutdown-timer.git
+cd shutdown-timer
+
+# Install in development mode
+pip install -e .
+
+# Run directly
+python shutdown_timer_embedded.py
+```
+
+### Download Executable
+- Download the latest release from [Releases](https://github.com/pukdev/shutdown-timer/releases)
+- Extract and run `shutdown_timer_embedded.exe`
+
 ## 🎯 Why This Project?
 
 ### The Problem
@@ -61,6 +98,7 @@ Unlike other shutdown timers, this project showcases:
 
 ### 💻 Technical Quality
 - **Cross-compatible** - Works on Windows 10 and 11
+- **System tray support** - Minimize to tray with background operation
 - **Resource efficient** - Minimal memory footprint
 - **Robust error handling** - Graceful failure management
 - **Clean termination** - Proper process cleanup
@@ -83,4 +121,15 @@ Unlike other shutdown timers, this project showcases:
 
 ### Antivirus Notes
 Some antivirus may flag PyInstaller executables as suspicious - this is a known false positive. The complete source code is available for inspection.
+
+## 📁 Project Files
+
+### Main Applications
+- `shutdown_timer_2.1.py` - **Latest version** with system tray support
+- `shutdown_timer_embedded.py` - Original embedded version
+- `test_tray.py` - Test application for tray functionality
+
+### Documentation
+- `TRAY_FEATURES.md` - Detailed guide for system tray features
+- `requirements.txt` - Python dependencies including tray support
 

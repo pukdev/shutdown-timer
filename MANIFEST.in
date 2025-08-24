@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include requirements.txt
+include *.ico
+include *.png
+include screenshots/*
+recursive-include screenshots *
+
